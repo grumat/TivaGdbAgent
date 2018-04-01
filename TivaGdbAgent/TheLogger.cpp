@@ -84,17 +84,9 @@ void CLogger::Log(Level_e level, const TCHAR *msg, va_list vargs)
 {
 	if(OnTestLevel(level))
 	{
-		std::wstring buf;
-		size_t cnt = 0;
-		bool fail = true;
-		do
-		{
-			cnt += 256;
-			buf.reserve(cnt);
-			fail = (_vstprintf_l(&buf[0], cnt, msg, NULL, vargs) == (size_t)-1);
-		}
-		while (fail);
-		OnLog(level, buf.c_str());
+		CAtlString s;
+		s.Format(msg, vargs);
+		OnLog(level, s);
 	}
 }
 

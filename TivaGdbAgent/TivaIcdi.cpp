@@ -63,7 +63,7 @@ WinUSB::String CTivaIcdi::GetStringDescriptor(UCHAR index)
 
 
 
-void CTivaIcdi::Open(IUsbDispatch &rReadPackets)
+void CTivaIcdi::Open(IGdbDispatch &rReadPackets)
 {
 	WinUSB::String s;
 
@@ -272,6 +272,29 @@ void CTivaIcdi::Open(IUsbDispatch &rReadPackets)
 }
 
 
+/*!
+This method sends the parsed inet data directly to the USB output pipe.
+
+This routine runs on the main thread.
+*/
+void CTivaIcdi::HandleData(CGdbStateMachine &gdbCtx)
+{
+
+	Debug(_T("%hs: '%hs'\n"), __FUNCTION__, (const BYTE*)gdbCtx);
+
+	ULONG xfered;
+	if (!m_Device.WritePipe(m_PipeOut, (PUCHAR)(const BYTE*)gdbCtx, (ULONG)gdbCtx.GetCount(), &xfered, NULL))
+	{
+		DWORD err = GetLastError();
+		Error(_T("Failed to write to USB Pipe\n"));
+		AtlThrow(HRESULT_FROM_WIN32(err));
+
+	}
+
+	Debug(_T("%hs: ...done\n"), __FUNCTION__);
+}
+
+
 void __cdecl CTivaIcdi::ReadThread(LPVOID pThis)
 {
 	((CTivaIcdi*)pThis)->ReadThread();
@@ -331,8 +354,10 @@ void CTivaIcdi::ReadThread()
 				m_Device.GetOverlappedResult(&op, &xfered, FALSE);
 			buffer[xfered] = 0;
 			Debug(_T("%hs: '%hs'\n"), __FUNCTION__, buffer);
+#if 0
 			if(m_pUsbRead)
 				m_pUsbRead->HandleData(buffer, xfered);
+#endif
 		}
 	}
 	CloseHandle(op.hEvent);
@@ -361,32 +386,5 @@ void CTivaIcdi::Close()
 	m_PipeIn = 0;
 	m_PipeOut = 0;
 	m_Device.Free();
-}
-
-
-void CTivaIcdi::HandleData(GDBCTX &gdbCtx, size_t count)
-{
-	//
-	// NOTE: There is a possible race condition here because USB may not
-	// consume this buffer before we start writing to it.  BUT
-	// since the GDB protocol is inherently synchronous,  I think 
-	// we avoid that scenario.
-	//
-	gdbCtx.pResp[gdbCtx.iRd] = 0;
-	//pTransReq->buffer = gdbCtx.pResp;
-	//pTransReq->length = gdbCtx.iRd;
-
-	Debug(_T("%hs: '%hs'\n"), __FUNCTION__, gdbCtx.pResp);
-
-	ULONG xfered;
-	if(! m_Device.WritePipe(m_PipeOut, gdbCtx.pResp, gdbCtx.iRd, &xfered, NULL))
-	{
-		DWORD err = GetLastError();
-		Error(_T("Failed to write to USB Pipe\n"));
-		AtlThrow(HRESULT_FROM_WIN32(err));
-
-	}
-
-	Debug(_T("%hs: ...done\n"), __FUNCTION__);
 }
 

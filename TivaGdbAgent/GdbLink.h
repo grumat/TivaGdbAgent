@@ -2,19 +2,19 @@
 #include "GdbDispatch.h"
 
 
-class CGdbLink : public IUsbDispatch
+class CGdbLink : public IGdbDispatch
 {
 public:
-	CGdbLink();
+	CGdbLink(IGdbDispatch &link_handler);
 	~CGdbLink();
 
 public:
-	void Serve(int iPort, IGdbDispatch *iface);
+	void Serve(int iPort);
 
 protected:
 	void Listen(unsigned int iPort);
 	bool IsListening() const { return sdAccept > 0; }
-	void DoGdb(IGdbDispatch *iface);
+	void DoGdb();
 	int ReadGdbMessage();
 	const BYTE *GetMessage() const
 	{
@@ -25,12 +25,11 @@ protected:
 		closesocket(sdAccept);
 		sdAccept = 0;
 	}
-	void StateMachine(IGdbDispatch *iface);
 
-	void HandleData(BYTE *buf, size_t count) override;
+	void HandleData(CGdbStateMachine &gdbCtx) override;
 
 protected:
-	int sdAccept;
+	SOCKET sdAccept;
 	std::vector<BYTE> m_Message;
-	GDBCTX m_Ctx;
+	CGdbStateMachine m_Ctx;
 };

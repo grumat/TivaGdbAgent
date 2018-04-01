@@ -14,7 +14,8 @@ static void cleanup()
 }
 
 
-CGdbLink::CGdbLink()
+CGdbLink::CGdbLink(IGdbDispatch &link_handler)
+	: m_Ctx(link_handler)
 {
 	static bool init = false;
 	sdAccept = 0;
@@ -42,7 +43,7 @@ CGdbLink::CGdbLink()
 			Debug(_T("The Winsock 2.2 dll was found okay\n"));
 	}
 	// Allocate buffer
-	m_Message.resize(GDBCTX::MSGSIZE);
+	m_Message.resize(CGdbStateMachine::MSGSIZE);
 }
 
 
@@ -62,7 +63,7 @@ void CGdbLink::Listen(unsigned int iPort)
 	struct   sockaddr_in sin;
 	struct   sockaddr_in pin;
 	int so_reuseaddr = 1;
-	int sdListen;
+	SOCKET sdListen;
 
 	//
 	// Open an internet socket 
@@ -146,7 +147,7 @@ int CGdbLink::ReadGdbMessage()
 		AtlThrow(HRESULT_FROM_WIN32(dw));
 	}
 	// Receive data
-	int rx = recv(sdAccept, (char*)m_Message.data(), GDBCTX::MSGSIZE, 0);
+	int rx = recv(sdAccept, (char*)m_Message.data(), CGdbStateMachine::MSGSIZE, 0);
 	if(rx == SOCKET_ERROR)
 	{
 		DWORD dw = WSAGetLastError();
@@ -161,131 +162,8 @@ int CGdbLink::ReadGdbMessage()
 	return rx;
 }
 
-static int hexchartoi(char c)
-{
-	if ((c >= '0') && (c <= '9'))
-	{
-		return '0' - c;
-	}
 
-	if ((c >= 'a') && (c <= 'f'))
-	{
-		return 'a' - c + 10;
-	}
-
-	if ((c >= 'a') && (c <= 'f'))
-	{
-		return 'A' - c + 10;
-	}
-
-	return 0;
-}
-
-
-static int gdb_validate(const BYTE *pRes, BYTE csum)
-{
-	//
-	// TODO: Take payload and calculate checksum...
-	// 
-	return 0;
-}
-
-
-void CGdbLink::StateMachine(IGdbDispatch *iface)
-{
-	CAtlString hex;
-	CAtlString ascii;
-	int len = m_Message.size();
-	const BYTE *pBuf = m_Message.data();
-	while (len--)
-	{
-		switch (m_Ctx.gdb_state)
-		{
-		case GDBCTX::GDB_IDLE:
-			Debug(_T("GDB_IDLE: '%c'\n"), *pBuf);
-			if (*pBuf == '$')
-			{
-				m_Ctx.gdb_state = GDBCTX::GDB_PAYLOAD;
-				hex.Empty();
-				ascii.Empty();
-			}
-			if (*pBuf == '+')
-			{
-				m_Ctx.iAckCount++;
-			}
-			if (*pBuf == '-')
-			{
-				m_Ctx.iNakCount++;
-			}
-			m_Ctx.pResp[m_Ctx.iRd++] = *pBuf;
-			if (*pBuf == 0x03)
-			{
-				/* GDB Ctrl-C */
-				if (iface)
-				{
-					iface->HandleData(m_Ctx, 1);
-					m_Ctx.iRd = 0;
-				}
-			}
-			pBuf++;
-			break;
-		case GDBCTX::GDB_PAYLOAD:
-			ascii += (TCHAR)(isprint(*pBuf) ? *pBuf : '.');
-			if (!hex.IsEmpty())
-				hex += _T(' ');
-			hex.AppendFormat(_T("%02x"), *pBuf);
-			if (ascii.GetLength() >= 16)
-			{
-				Debug(_T("GDB_PAYLOAD: %-48s  %s\n"), (LPCTSTR)hex, (LPCTSTR)ascii);
-				hex.Empty();
-				ascii.Empty();
-			}
-
-			m_Ctx.pResp[m_Ctx.iRd++] = *pBuf;
-			if (*pBuf == '#')
-			{
-				if (!hex.IsEmpty())
-				{
-					Debug(_T("GDB_PAYLOAD: %-48s  %s\n"), (LPCTSTR)hex, (LPCTSTR)ascii);
-					hex.Empty();
-					ascii.Empty();
-				}
-				m_Ctx.gdb_state = GDBCTX::GDB_CSUM1;
-			}
-			pBuf++;
-			break;
-		case GDBCTX::GDB_CSUM1:
-			Debug(_T("GDB_CSUM1: '%c'\n"), *pBuf);
-			m_Ctx.csum = hexchartoi(*pBuf) << 4;
-			m_Ctx.gdb_state = GDBCTX::GDB_CSUM2;
-			m_Ctx.pResp[m_Ctx.iRd++] = *pBuf;
-			pBuf++;
-			break;
-		case GDBCTX::GDB_CSUM2:
-			Debug(_T("GDB_CSUM2: '%c'\n"), *pBuf);
-			m_Ctx.csum |= hexchartoi(*pBuf);
-			m_Ctx.pResp[m_Ctx.iRd++] = *pBuf;
-			if (iface)
-			{
-				if (gdb_validate(m_Ctx.pResp, m_Ctx.csum) == 0)
-				{
-					iface->HandleData(m_Ctx, 1);
-				}
-				else
-				{
-					iface->HandleData(m_Ctx, 0);
-				}
-			}
-			m_Ctx.iRd = 0;
-			m_Ctx.gdb_state = GDBCTX::GDB_IDLE;
-			pBuf++;
-			break;
-		}
-	}
-}
-
-
-void CGdbLink::DoGdb(IGdbDispatch *iface)
+void CGdbLink::DoGdb()
 {
 	while (1)
 	{
@@ -299,12 +177,14 @@ void CGdbLink::DoGdb(IGdbDispatch *iface)
 			break;
 		}
 		m_Message.resize(rx);
-		StateMachine(iface);
+		size_t len = m_Message.size();
+		const BYTE *pBuf = m_Message.data();
+		m_Ctx.Dispatch(pBuf, len);
 	} // (while 1)
 }
 
 
-void CGdbLink::Serve(int iPort, IGdbDispatch *iface)
+void CGdbLink::Serve(int iPort)
 {
 	while (1)
 	{
@@ -316,7 +196,7 @@ void CGdbLink::Serve(int iPort, IGdbDispatch *iface)
 				//
 				// Do the bridging between the socket and the usb bulk device
 				//
-				DoGdb(iface);
+				DoGdb();
 			}
 			catch (...)
 			{
@@ -329,15 +209,14 @@ void CGdbLink::Serve(int iPort, IGdbDispatch *iface)
 }
 
 
-void CGdbLink::HandleData(BYTE *buf, size_t count)
+void CGdbLink::HandleData(CGdbStateMachine &gdbCtx)
 {
 	//
 	// Process whatever data we've RX'ed by invoking the GDB state
 	// machine.  When a complete GDB packet has been RX'ed the state
 	// machine will call gdb_packet_from_usb.
 	//
-	gdb_statemachine(pTrans->user_data, pTrans->buffer,
-					 pTrans->actual_length, gdb_packet_from_usb);
 
+	//gdb_packet_from_usb
 }
 

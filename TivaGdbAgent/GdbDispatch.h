@@ -1,35 +1,45 @@
 #pragma once
 
 
-struct GDBCTX
+class IGdbDispatch;
+
+
+class CGdbStateMachine
 {
 public:
+	CGdbStateMachine(IGdbDispatch &handler);
+	~CGdbStateMachine();
+
 	enum GDB_STATE { GDB_IDLE, GDB_PAYLOAD, GDB_CSUM1, GDB_CSUM2 };
 	enum
 	{
 		MSGSIZE = 8192,
 	};
 
-	GDB_STATE gdb_state;
-	BYTE *pResp;
-	size_t iRd;
-	BYTE csum;
-	size_t iAckCount;
-	size_t iNakCount;
+public:
+	operator const BYTE *() const { return m_pData; }
+	size_t GetCount() const { return m_iRd; }
 
-	GDBCTX()
-	{
-		gdb_state = GDB_IDLE;
-		pResp = new BYTE[MSGSIZE];
-		iRd = 0;
-		csum = 0;
-		iAckCount = 0;
-		iNakCount = 0;
-	}
-	~GDBCTX()
-	{
-		delete[] pResp;
-	}
+	void Dispatch(const BYTE *pBuf, size_t len);
+
+protected:
+	void Dispatch(bool fValid = false);
+
+protected:
+	//! A target to receive parsed GDB data
+	IGdbDispatch &m_Handler;
+	//! Current state machine status
+	GDB_STATE m_eState;
+	//! Pointer to the data
+	BYTE *m_pData;
+	//! Valid bytes on buffer
+	size_t m_iRd;
+	//! Checksum
+	BYTE m_ChkSum;
+	//! Count of ACK
+	size_t m_nAckCount;
+	//! Count of NAK
+	size_t m_nNakCount;
 };
 
 
@@ -37,13 +47,6 @@ class IGdbDispatch
 {
 
 public:
-	virtual void HandleData(GDBCTX &gdbCtx, size_t count) = 0;
-};
-
-
-class IUsbDispatch
-{
-public:
-	virtual void HandleData(BYTE *buf, size_t count) = 0;
+	virtual void HandleData(CGdbStateMachine &gdbCtx) = 0;
 };
 

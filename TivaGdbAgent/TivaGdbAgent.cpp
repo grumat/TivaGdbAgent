@@ -25,11 +25,11 @@ int main(int argc, char *argv[])
 	{
 		CTivaIcdi tiva;
 		s_pTivaObj = &tiva;
-		CGdbLink gdb_link;
+		CGdbLink gdb_link(tiva);
 
 		tiva.Open(gdb_link);
 		SetConsoleCtrlHandler(CloseTiva, TRUE);
-		gdb_link.Serve(7777, &tiva);
+		gdb_link.Serve(7777);
 		s_pTivaObj = NULL;	// object is going out of scope
 		tiva.Close();
 	}

@@ -25,9 +25,13 @@ public:
 
 public:
 	WinUSB::String GetTivaIcdiDevice();
-	void Open(IUsbDispatch &rReadPackets);
+	void Open(IGdbDispatch &rReadPackets);
 	void Close();
-	void HandleData(GDBCTX &gdbCtx, size_t count) override;
+
+// Interface class overrides
+protected:
+	//! Handles data coming from the Inet link
+	void HandleData(CGdbStateMachine &gdbCtx) override;
 
 protected:
 	WinUSB::String GetStringDescriptor(UCHAR index);
@@ -49,6 +53,6 @@ protected:
 	volatile DWORD m_dwThreadExitCode;
 	volatile uintptr_t m_hReadThread;
 	volatile bool m_fRunning;
-	IUsbDispatch *m_pUsbRead;
+	IGdbDispatch *m_pUsbRead;
 };
 
