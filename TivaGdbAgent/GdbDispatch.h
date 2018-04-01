@@ -18,6 +18,7 @@ public:
 
 public:
 	operator const BYTE *() const { return m_pData; }
+	operator const char *() const { return (const char *)m_pData; }
 	size_t GetCount() const { return m_iRd; }
 
 	void Dispatch(const BYTE *pBuf, size_t len);

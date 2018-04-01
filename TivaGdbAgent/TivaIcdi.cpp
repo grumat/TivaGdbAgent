@@ -17,6 +17,7 @@ CTivaIcdi::CTivaIcdi()
 	m_AlternateSetting = 0;
 	m_PipeIn = 0;
 	m_PipeOut = 0;
+	m_dwThreadExitCode = 0;
 	m_hReadThread = NULL;
 	m_fRunning = false;
 	m_pUsbRead = NULL;
@@ -279,6 +280,8 @@ This routine runs on the main thread.
 */
 void CTivaIcdi::HandleData(CGdbStateMachine &gdbCtx)
 {
+	if (m_dwThreadExitCode != 0)
+		AtlThrow(HRESULT_FROM_WIN32(m_dwThreadExitCode));
 
 	Debug(_T("%hs: '%hs'\n"), __FUNCTION__, (const BYTE*)gdbCtx);
 

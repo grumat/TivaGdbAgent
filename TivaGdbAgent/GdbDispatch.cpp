@@ -70,7 +70,7 @@ void CGdbStateMachine::Dispatch(const BYTE *pBuf, size_t len)
 		switch (m_eState)
 		{
 		case GDB_IDLE:
-			Debug(_T("GDB_IDLE: '%c'\n"), *pBuf);
+			Debug(_T("GDB_IDLE: '%hc'\n"), *pBuf);
 			if (*pBuf == '$')
 			{
 				m_eState = GDB_PAYLOAD;
@@ -95,7 +95,7 @@ void CGdbStateMachine::Dispatch(const BYTE *pBuf, size_t len)
 			pBuf++;
 			break;
 		case GDB_PAYLOAD:
-			ascii += (TCHAR)(isprint(*pBuf) ? *pBuf : '.');
+			ascii += (char)(isprint(*pBuf) ? *pBuf : '.');
 			if (!hex.IsEmpty())
 				hex += _T(' ');
 			hex.AppendFormat(_T("%02x"), *pBuf);
@@ -111,7 +111,7 @@ void CGdbStateMachine::Dispatch(const BYTE *pBuf, size_t len)
 			{
 				if (!hex.IsEmpty())
 				{
-					Debug(_T("GDB_PAYLOAD: %-48s  %s\n"), (LPCTSTR)hex, (LPCTSTR)ascii);
+					Debug(_T("GDB_PAYLOAD: %-48S  %s\n"), (LPCTSTR)hex, (LPCTSTR)ascii);
 					hex.Empty();
 					ascii.Empty();
 				}

@@ -84,8 +84,9 @@ void CLogger::Log(Level_e level, const TCHAR *msg, va_list vargs)
 {
 	if(OnTestLevel(level))
 	{
+		CComAutoCriticalSection lock;
 		CAtlString s;
-		s.Format(msg, vargs);
+		s.FormatV(msg, vargs);
 		OnLog(level, s);
 	}
 }

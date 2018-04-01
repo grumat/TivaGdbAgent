@@ -217,6 +217,7 @@ void CGdbLink::HandleData(CGdbStateMachine &gdbCtx)
 	// machine will call gdb_packet_from_usb.
 	//
 
-	//gdb_packet_from_usb
+	Debug(_T("%hs: '%hs'\n"), __FUNCTION__, gdbCtx);
+	send(sdAccept, gdbCtx, (int)gdbCtx.GetCount(), 0);
 }
 
