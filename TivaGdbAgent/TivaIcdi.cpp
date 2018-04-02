@@ -26,6 +26,7 @@ CTivaIcdi::CTivaIcdi()
 
 CTivaIcdi::~CTivaIcdi()
 {
+	Close();
 }
 
 
@@ -105,7 +106,7 @@ void CTivaIcdi::Open(IGdbDispatch &rReadPackets)
 		if (m_StringMfg.empty())
 			Warning(_T("    No manufacturer name was provided\n"));
 		else
-			Debug(L"    Manufacturer name: %s\n", m_StringMfg.c_str());
+			Debug(_T("    Manufacturer name: %s\n"), m_StringMfg.c_str());
 		Debug(_T("  iProduct: 0x%02X\n"), static_cast<int>(m_DeviceDescriptor.iProduct));
 		if (m_DeviceDescriptor.iProduct)
 			m_StringDescriptor = GetStringDescriptor(m_DeviceDescriptor.iProduct);
@@ -283,7 +284,7 @@ void CTivaIcdi::HandleData(CGdbStateMachine &gdbCtx)
 	if (m_dwThreadExitCode != 0)
 		AtlThrow(HRESULT_FROM_WIN32(m_dwThreadExitCode));
 
-	Debug(_T("%hs: '%hs'\n"), __FUNCTION__, (const BYTE*)gdbCtx);
+	Info(_T("%hs: Write USB Pipe Out '%hs'\n"), __FUNCTION__, (const char*)gdbCtx);
 
 	ULONG xfered;
 	if (!m_Device.WritePipe(m_PipeOut, (PUCHAR)(const BYTE*)gdbCtx, (ULONG)gdbCtx.GetCount(), &xfered, NULL))
@@ -293,8 +294,12 @@ void CTivaIcdi::HandleData(CGdbStateMachine &gdbCtx)
 		AtlThrow(HRESULT_FROM_WIN32(err));
 
 	}
+}
 
-	Debug(_T("%hs: ...done\n"), __FUNCTION__);
+
+DWORD CTivaIcdi::OnGetThreadErrorState() const
+{
+	return m_dwThreadExitCode;
 }
 
 
@@ -307,6 +312,7 @@ void __cdecl CTivaIcdi::ReadThread(LPVOID pThis)
 
 void CTivaIcdi::ReadThread()
 {
+	CGdbStateMachine gdbCtx(*m_pUsbRead);
 	BYTE buffer[READ_BUFFER_BYTES + 1];
 	ULONG xfered;
 	OVERLAPPED op;
@@ -356,11 +362,8 @@ void CTivaIcdi::ReadThread()
 			if (fPending)
 				m_Device.GetOverlappedResult(&op, &xfered, FALSE);
 			buffer[xfered] = 0;
-			Debug(_T("%hs: '%hs'\n"), __FUNCTION__, buffer);
-#if 0
-			if(m_pUsbRead)
-				m_pUsbRead->HandleData(buffer, xfered);
-#endif
+			Debug(_T("%hs: USB Pipe IN:'%hs'\n"), __FUNCTION__, buffer);
+			gdbCtx.Dispatch(buffer, xfered);
 		}
 	}
 	CloseHandle(op.hEvent);

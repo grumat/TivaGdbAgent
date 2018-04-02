@@ -1,7 +1,16 @@
 #pragma once
 
 
-class IGdbDispatch;
+class CGdbStateMachine;
+
+
+class IGdbDispatch
+{
+
+public:
+	virtual void HandleData(CGdbStateMachine &gdbCtx) = 0;
+	virtual DWORD OnGetThreadErrorState() const = 0;
+};
 
 
 class CGdbStateMachine
@@ -22,9 +31,11 @@ public:
 	size_t GetCount() const { return m_iRd; }
 
 	void Dispatch(const BYTE *pBuf, size_t len);
+	// In case of a routine running on a thread, exceptions can be thrown
+	DWORD GetThreadErrorState() const { return m_Handler.OnGetThreadErrorState(); }
 
 protected:
-	void Dispatch(bool fValid = false);
+	void Dispatch();
 
 protected:
 	//! A target to receive parsed GDB data
@@ -35,19 +46,9 @@ protected:
 	BYTE *m_pData;
 	//! Valid bytes on buffer
 	size_t m_iRd;
+	//! Payload packet start
+	size_t m_iStart;
 	//! Checksum
 	BYTE m_ChkSum;
-	//! Count of ACK
-	size_t m_nAckCount;
-	//! Count of NAK
-	size_t m_nNakCount;
-};
-
-
-class IGdbDispatch
-{
-
-public:
-	virtual void HandleData(CGdbStateMachine &gdbCtx) = 0;
 };
 

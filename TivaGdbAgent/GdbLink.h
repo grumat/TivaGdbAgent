@@ -15,7 +15,13 @@ protected:
 	void Listen(unsigned int iPort);
 	bool IsListening() const { return sdAccept > 0; }
 	void DoGdb();
-	int ReadGdbMessage();
+	enum RdState_e
+	{
+		Abort,
+		Waiting,
+		Sent,
+	};
+	RdState_e ReadGdbMessage();
 	const BYTE *GetMessage() const
 	{
 		return m_Message.data();
@@ -27,9 +33,17 @@ protected:
 	}
 
 	void HandleData(CGdbStateMachine &gdbCtx) override;
+	DWORD OnGetThreadErrorState() const override;
 
 protected:
 	SOCKET sdAccept;
 	std::vector<BYTE> m_Message;
 	CGdbStateMachine m_Ctx;
+	struct Xmit
+	{
+		int count;
+		char *buffer;
+	};
+	std::vector<Xmit> m_XmitQueue;
+	CComCriticalSection m_XmitQueueLock;
 };

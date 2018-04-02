@@ -32,6 +32,7 @@ public:
 protected:
 	//! Handles data coming from the Inet link
 	void HandleData(CGdbStateMachine &gdbCtx) override;
+	DWORD OnGetThreadErrorState() const override;
 
 protected:
 	WinUSB::String GetStringDescriptor(UCHAR index);

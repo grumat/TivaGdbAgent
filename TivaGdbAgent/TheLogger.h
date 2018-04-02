@@ -42,6 +42,8 @@ protected:
 protected:
 	static CLogger *m_pLogger;
 	Level_e m_nLevel;
+	DWORD m_dwStartTick;
+	DWORD m_dwMainThreadID;
 
 private:
 	static void Dispose();

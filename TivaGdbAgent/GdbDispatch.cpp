@@ -11,10 +11,8 @@ CGdbStateMachine::CGdbStateMachine(IGdbDispatch &handler)
 {
 	m_eState = GDB_IDLE;
 	m_pData = new BYTE[MSGSIZE];
-	m_iRd = 0;
+	m_iStart = m_iRd = 0;
 	m_ChkSum = 0;
-	m_nAckCount = 0;
-	m_nNakCount = 0;
 }
 
 
@@ -24,10 +22,12 @@ CGdbStateMachine::~CGdbStateMachine()
 }
 
 
-void CGdbStateMachine::Dispatch(bool fValid)
+void CGdbStateMachine::Dispatch()
 {
 	m_pData[m_iRd] = 0;	// nul-terminates strings
 	m_Handler.HandleData(*this);
+	m_iStart = m_iRd = 0;
+	m_eState = GDB_IDLE;
 }
 
 
@@ -35,114 +35,104 @@ static int hexchartoi(char c)
 {
 	if ((c >= '0') && (c <= '9'))
 	{
-		return '0' - c;
+		return c - '0';
 	}
 
 	if ((c >= 'a') && (c <= 'f'))
 	{
-		return 'a' - c + 10;
+		return c - 'a' + 10;
 	}
 
-	if ((c >= 'a') && (c <= 'f'))
+	if ((c >= 'A') && (c <= 'F'))
 	{
-		return 'A' - c + 10;
+		return c - 'A' + 10;
 	}
 
-	return 0;
-}
-
-
-static int gdb_validate(const BYTE *pRes, BYTE csum)
-{
-	//
-	// TODO: Take payload and calculate checksum...
-	// 
 	return 0;
 }
 
 
 void CGdbStateMachine::Dispatch(const BYTE *pBuf, size_t len)
 {
+	// Can't continue on errors
+	if (GetThreadErrorState() != 0)
+		return;
+
 	CAtlString hex;
 	CAtlString ascii;
+	BYTE ch;
 	while (len--)
 	{
+		ch = *pBuf++;
 		switch (m_eState)
 		{
 		case GDB_IDLE:
-			Debug(_T("GDB_IDLE: '%hc'\n"), *pBuf);
-			if (*pBuf == '$')
+			Debug(_T("  GDB_IDLE: '%hc'\n"), isprint(ch) ? ch : '.');
+			m_pData[m_iRd++] = ch;
+			if (ch == '$')
 			{
+				m_iStart = m_iRd - 1;
 				m_eState = GDB_PAYLOAD;
 				hex.Empty();
 				ascii.Empty();
 			}
-			if (*pBuf == '+')
+			else if (ch == '-'
+					 || ch == 0x03)
 			{
-				m_nAckCount++;
-			}
-			if (*pBuf == '-')
-			{
-				m_nNakCount++;
-			}
-			m_pData[m_iRd++] = *pBuf;
-			if (*pBuf == 0x03)
-			{
-				/* GDB Ctrl-C */
 				Dispatch();
-				m_iRd = 0;
 			}
-			pBuf++;
+			else if (ch == 0)
+				--m_iRd;	// ignore NUL's
 			break;
 		case GDB_PAYLOAD:
-			ascii += (char)(isprint(*pBuf) ? *pBuf : '.');
+			if (ch == 0)
+			{
+				// Payloads cannot contain NUL's but somehow it happens
+				m_iRd = m_iStart;
+				m_eState = GDB_IDLE;
+				break;
+			}
+			// Make Debug packet dump
+			ascii += (char)(isprint(ch) ? ch : '.');
 			if (!hex.IsEmpty())
 				hex += _T(' ');
-			hex.AppendFormat(_T("%02x"), *pBuf);
+			hex.AppendFormat(_T("%02x"), ch);
 			if (ascii.GetLength() >= 16)
 			{
-				Debug(_T("GDB_PAYLOAD: %-48s  %s\n"), (LPCTSTR)hex, (LPCTSTR)ascii);
+				Debug(_T("  GDB_PAYLOAD: %-48s  %s\n"), (LPCTSTR)hex, (LPCTSTR)ascii);
 				hex.Empty();
 				ascii.Empty();
 			}
 
-			m_pData[m_iRd++] = *pBuf;
-			if (*pBuf == '#')
+			m_pData[m_iRd++] = ch;
+			if (ch == '#')
 			{
 				if (!hex.IsEmpty())
 				{
-					Debug(_T("GDB_PAYLOAD: %-48S  %s\n"), (LPCTSTR)hex, (LPCTSTR)ascii);
+					Debug(_T("  GDB_PAYLOAD: %-48s  %s\n"), (LPCTSTR)hex, (LPCTSTR)ascii);
 					hex.Empty();
 					ascii.Empty();
 				}
 				m_eState = GDB_CSUM1;
 			}
-			pBuf++;
 			break;
 		case GDB_CSUM1:
-			Debug(_T("GDB_CSUM1: '%c'\n"), *pBuf);
-			m_ChkSum = hexchartoi(*pBuf) << 4;
+			Debug(_T("  GDB_CSUM1: '%hc'\n"), ch);
+			m_ChkSum = hexchartoi(ch) << 4;
 			m_eState = GDB_CSUM2;
-			m_pData[m_iRd++] = *pBuf;
-			pBuf++;
+			m_pData[m_iRd++] = ch;
 			break;
 		case GDB_CSUM2:
-			Debug(_T("GDB_CSUM2: '%c'\n"), *pBuf);
-			m_ChkSum |= hexchartoi(*pBuf);
-			m_pData[m_iRd++] = *pBuf;
-			if (gdb_validate(m_pData, m_ChkSum) == 0)
-			{
-				Dispatch();
-			}
-			else
-			{
-				Dispatch(false);
-			}
-			m_iRd = 0;
-			m_eState = GDB_IDLE;
-			pBuf++;
+			Debug(_T("  GDB_CSUM2: '%hc'\n"), ch);
+			m_ChkSum |= hexchartoi(ch);
+			m_pData[m_iRd++] = ch;
+			// Transmit the packet to the ICDI USB pipe
+			Dispatch();
 			break;
 		}
 	}
+	// ACK-only packet
+	if (m_iRd == 1 && m_pData[0] == '+')
+		Dispatch();
 }
 

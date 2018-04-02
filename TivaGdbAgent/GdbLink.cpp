@@ -44,6 +44,7 @@ CGdbLink::CGdbLink(IGdbDispatch &link_handler)
 	}
 	// Allocate buffer
 	m_Message.resize(CGdbStateMachine::MSGSIZE);
+	m_XmitQueueLock.Init();
 }
 
 
@@ -133,33 +134,47 @@ void CGdbLink::Listen(unsigned int iPort)
 }
 
 
-int CGdbLink::ReadGdbMessage()
+CGdbLink::RdState_e CGdbLink::ReadGdbMessage()
 {
-	WSAPOLLFD fdarray[1];
-	fdarray[0].fd = sdAccept;
-	fdarray[0].events = POLLIN;
-	fdarray[0].revents = POLLRDNORM | POLLRDBAND;
-	int res = WSAPoll(fdarray, 1, 10);
-	if (res == SOCKET_ERROR)
+	// Query receive data (MSG_PEEK)
+	int rx = recv(sdAccept, (char*)m_Message.data(), CGdbStateMachine::MSGSIZE, MSG_PEEK);
+	if(rx <= 0)
 	{
 		DWORD dw = WSAGetLastError();
-		Error(_T("Call to WSAPoll() failed.\n"));
-		AtlThrow(HRESULT_FROM_WIN32(dw));
+		if (dw == WSAECONNRESET || dw == WSAECONNABORTED)
+		{
+			Info(_T("Call to recv() was closed by remote (%d).\n"), dw);
+			return Abort;
+		}
+		else if (dw)
+		{
+			Error(_T("Call to recv() failed.\n"));
+			AtlThrow(HRESULT_FROM_WIN32(dw));
+		}
 	}
-	// Receive data
-	int rx = recv(sdAccept, (char*)m_Message.data(), CGdbStateMachine::MSGSIZE, 0);
-	if(rx == SOCKET_ERROR)
+	// Just read data if actually present
+	if (rx)
 	{
-		DWORD dw = WSAGetLastError();
-		Error(_T("Call to recv() failed.\n"));
-		AtlThrow(HRESULT_FROM_WIN32(dw));
+		// Now read the data effectively
+		rx = recv(sdAccept, (char*)m_Message.data(), CGdbStateMachine::MSGSIZE, 0);
+		if (rx == SOCKET_ERROR)
+		{
+			DWORD dw = WSAGetLastError();
+			if (dw == WSAECONNRESET || dw == WSAECONNABORTED)
+			{
+				Info(_T("Call to recv() was closed by remote (%d).\n"), dw);
+				return Abort;
+			}
+			Error(_T("Call to recv() failed.\n"));
+			AtlThrow(HRESULT_FROM_WIN32(dw));
+		}
+		Debug(_T("%hs: recv returned %d\n"), __FUNCTION__, (int)rx);
+		m_Message.resize(rx);
+		const BYTE *pBuf = m_Message.data();
+		m_Ctx.Dispatch(pBuf, rx);
+		return Sent;
 	}
-	Debug(_T("%hs: recv returned %d\n"), __FUNCTION__, (int)rx);
-	// 
-	// if we RX 0 bytes it usually means that the other 
-	// side closed the connection
-	//
-	return rx;
+	return Waiting;
 }
 
 
@@ -167,19 +182,28 @@ void CGdbLink::DoGdb()
 {
 	while (1)
 	{
-		int rx = ReadGdbMessage();
-		if (rx == 0)
+		DWORD err = m_Ctx.GetThreadErrorState();
+		if(err)
 		{
-			// 
-			// if we RX 0 bytes it usually means that the other 
-			// side closed the connection
-			//
-			break;
+			Error(_T("USB Thread is reporting errors.\n"));
+			AtlThrow(HRESULT_FROM_WIN32(err));
 		}
-		m_Message.resize(rx);
-		size_t len = m_Message.size();
-		const BYTE *pBuf = m_Message.data();
-		m_Ctx.Dispatch(pBuf, len);
+		RdState_e eRead = ReadGdbMessage();
+		if (eRead == Abort)
+			break;	// remote connection was closed
+		if (m_XmitQueue.size())
+		{
+			Xmit packet;
+			// BLOCK: lock
+			{
+				CComCritSecLock<CComCriticalSection> lock(m_XmitQueueLock);
+				packet = m_XmitQueue.front();
+				m_XmitQueue.erase(m_XmitQueue.begin());
+			}
+			send(sdAccept, packet.buffer, packet.count, 0);
+		}
+		else if (eRead == Waiting)
+			Sleep(0);
 	} // (while 1)
 }
 
@@ -217,7 +241,18 @@ void CGdbLink::HandleData(CGdbStateMachine &gdbCtx)
 	// machine will call gdb_packet_from_usb.
 	//
 
-	Debug(_T("%hs: '%hs'\n"), __FUNCTION__, gdbCtx);
-	send(sdAccept, gdbCtx, (int)gdbCtx.GetCount(), 0);
+	Info(_T("%hs: send to gdb: '%hs'\n"), __FUNCTION__, (const char *)gdbCtx);
+	Xmit packet;
+	packet.count = (int)gdbCtx.GetCount();
+	packet.buffer = new char[packet.count];
+	memcpy(packet.buffer, (const char *)gdbCtx, packet.count);
+	CComCritSecLock<CComCriticalSection> lock(m_XmitQueueLock);
+	m_XmitQueue.push_back(packet);
+}
+
+
+DWORD CGdbLink::OnGetThreadErrorState() const
+{
+	return 0;
 }
 
