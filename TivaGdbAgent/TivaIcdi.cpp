@@ -26,6 +26,7 @@ CTivaIcdi::CTivaIcdi()
 
 CTivaIcdi::~CTivaIcdi()
 {
+	Close();
 }
 
 
@@ -105,7 +106,7 @@ void CTivaIcdi::Open(IGdbDispatch &rReadPackets)
 		if (m_StringMfg.empty())
 			Warning(_T("    No manufacturer name was provided\n"));
 		else
-			Debug(L"    Manufacturer name: %s\n", m_StringMfg.c_str());
+			Debug(_T("    Manufacturer name: %s\n"), m_StringMfg.c_str());
 		Debug(_T("  iProduct: 0x%02X\n"), static_cast<int>(m_DeviceDescriptor.iProduct));
 		if (m_DeviceDescriptor.iProduct)
 			m_StringDescriptor = GetStringDescriptor(m_DeviceDescriptor.iProduct);
@@ -283,18 +284,23 @@ void CTivaIcdi::HandleData(CGdbStateMachine &gdbCtx)
 	if (m_dwThreadExitCode != 0)
 		AtlThrow(HRESULT_FROM_WIN32(m_dwThreadExitCode));
 
-	Debug(_T("%hs: '%hs'\n"), __FUNCTION__, (const BYTE*)gdbCtx);
+	const char *pChar = gdbCtx;
+
+	Info(_T("%-22hs: GDB --> ICDI: '%hS' (%d)\n"), __FUNCTION__, pChar, gdbCtx.GetCount());
 
 	ULONG xfered;
-	if (!m_Device.WritePipe(m_PipeOut, (PUCHAR)(const BYTE*)gdbCtx, (ULONG)gdbCtx.GetCount(), &xfered, NULL))
+	if (!m_Device.WritePipe(m_PipeOut, (PUCHAR)pChar, (ULONG)gdbCtx.GetCount(), &xfered, NULL))
 	{
 		DWORD err = GetLastError();
 		Error(_T("Failed to write to USB Pipe\n"));
 		AtlThrow(HRESULT_FROM_WIN32(err));
-
 	}
+}
 
-	Debug(_T("%hs: ...done\n"), __FUNCTION__);
+
+DWORD CTivaIcdi::OnGetThreadErrorState() const
+{
+	return m_dwThreadExitCode;
 }
 
 
@@ -307,6 +313,7 @@ void __cdecl CTivaIcdi::ReadThread(LPVOID pThis)
 
 void CTivaIcdi::ReadThread()
 {
+	CGdbStateMachine gdbCtx(*m_pUsbRead);
 	BYTE buffer[READ_BUFFER_BYTES + 1];
 	ULONG xfered;
 	OVERLAPPED op;
@@ -329,11 +336,12 @@ void CTivaIcdi::ReadThread()
 		// Wait for pending I/O
 		while (fPending)
 		{
+			// If other thread wants us to close, we need to cancel I/O now
 			if (!m_fRunning)
 			{
 				CancelIoEx(m_Device, &op);
 				fPending = false;
-				Debug(_T("%hs: Read thread was cancelled\n"), __FUNCTION__);
+				Warning(_T("%hs: Read thread was cancelled\n"), __FUNCTION__);
 				break;
 			}
 			DWORD dw = WaitForSingleObject(op.hEvent, 100);
@@ -342,7 +350,7 @@ void CTivaIcdi::ReadThread()
 			ResetEvent(op.hEvent);
 			if (dw != WAIT_OBJECT_0)
 			{
-				Debug(_T("%hs: Error waiting for USB packet read\n"), __FUNCTION__);
+				Error(_T("%hs: Error waiting for USB packet read\n"), __FUNCTION__);
 				fPending = false;
 				m_fRunning = false;
 				m_dwThreadExitCode = dw;
@@ -356,11 +364,8 @@ void CTivaIcdi::ReadThread()
 			if (fPending)
 				m_Device.GetOverlappedResult(&op, &xfered, FALSE);
 			buffer[xfered] = 0;
-			Debug(_T("%hs: '%hs'\n"), __FUNCTION__, buffer);
-#if 0
-			if(m_pUsbRead)
-				m_pUsbRead->HandleData(buffer, xfered);
-#endif
+			Debug(_T("%hs: USB Pipe IN:'%hs'\n"), __FUNCTION__, buffer);
+			gdbCtx.ParseAndDispatch((const char *)buffer, xfered);
 		}
 	}
 	CloseHandle(op.hEvent);

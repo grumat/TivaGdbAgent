@@ -18,6 +18,7 @@ CGdbLink::CGdbLink(IGdbDispatch &link_handler)
 	: m_Ctx(link_handler)
 {
 	static bool init = false;
+	sdListen = 0;
 	sdAccept = 0;
 	if(!init)
 	{
@@ -42,15 +43,12 @@ CGdbLink::CGdbLink(IGdbDispatch &link_handler)
 		else
 			Debug(_T("The Winsock 2.2 dll was found okay\n"));
 	}
-	// Allocate buffer
-	m_Message.resize(CGdbStateMachine::MSGSIZE);
 }
 
 
 CGdbLink::~CGdbLink()
 {
-	if (IsListening())
-		Close();
+	Close();
 }
 
 
@@ -59,16 +57,21 @@ CGdbLink::~CGdbLink()
 // 
 void CGdbLink::Listen(unsigned int iPort)
 {
-	int addrlen;
 	struct   sockaddr_in sin;
-	struct   sockaddr_in pin;
 	int so_reuseaddr = 1;
-	SOCKET sdListen;
+
+	// Before attempting any network I/O check for parallel thread state
+	DWORD err = m_Ctx.GetThreadErrorState();
+	if(err)
+	{
+		Error(_T("USB thread failed.\n"));
+		AtlThrow(HRESULT_FROM_WIN32(err));
+	}
 
 	//
 	// Open an internet socket 
 	//
-	if ((sdListen = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET)
+	if ((sdListen = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED)) == INVALID_SOCKET)
 	{
 		DWORD dw = WSAGetLastError();
 		Error(_T("Call to socket() failed.\n"));
@@ -113,53 +116,207 @@ void CGdbLink::Listen(unsigned int iPort)
 		AtlThrow(HRESULT_FROM_WIN32(dw));
 	}
 
-	// 
-	// Accept() will block until someone connects.  In return it gives
-	// us a new file descriptor back.
-	//
-	Info(_T("Accept...\n"));
-	addrlen = sizeof(pin);
-	if ((sdAccept = accept(sdListen, (struct sockaddr *)  &pin, &addrlen)) == -1)
+	DWORD dwFlags = 0;
+	DWORD dwBytes;
+	LPFN_ACCEPTEX lpfnAcceptEx = NULL;
+	GUID GuidAcceptEx = WSAID_ACCEPTEX;
+
+	// Load the AcceptEx function into memory using WSAIoctl.
+	// The WSAIoctl function is an extension of the ioctlsocket()
+	// function that can use overlapped I/O. The function's 3rd
+	// through 6th parameters are input and output buffers where
+	// we pass the pointer to our AcceptEx function. This is used
+	// so that we can call the AcceptEx function directly, rather
+	// than refer to the Mswsock.lib library.
+	int iResult = WSAIoctl(sdListen, SIO_GET_EXTENSION_FUNCTION_POINTER,
+					   &GuidAcceptEx, sizeof(GuidAcceptEx),
+					   &lpfnAcceptEx, sizeof(lpfnAcceptEx),
+					   &dwBytes, NULL, NULL);
+	if (iResult == SOCKET_ERROR)
 	{
 		DWORD dw = WSAGetLastError();
-		Error(_T("Call to accept() failed.\n"));
+		Error(_T("Call to WSAIoctl() failed.\n"));
 		AtlThrow(HRESULT_FROM_WIN32(dw));
 	}
+
+	// Create an accepting socket
+	sdAccept = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (sdAccept == INVALID_SOCKET)
+	{
+		DWORD dw = WSAGetLastError();
+		Error(_T("Create accept socket failed!\n"));
+		AtlThrow(HRESULT_FROM_WIN32(dw));
+	}
+
+	// Empty our overlapped structure and accept connections.
+	WSAOVERLAPPED op;
+	memset(&op, 0, sizeof(op));
+	op.hEvent = WSACreateEvent();
+	if(op.hEvent == WSA_INVALID_EVENT)
+	{
+		DWORD dw = WSAGetLastError();
+		Error(_T("Call to WSACreateEvent() failed!\n"));
+		AtlThrow(HRESULT_FROM_WIN32(dw));
+	}
+
+	char lpOutputBuf[2 * (sizeof(SOCKADDR_IN) + 16)];
+
+	BOOL bRetVal = lpfnAcceptEx(sdListen, sdAccept, lpOutputBuf,
+						   0,
+						   sizeof(sockaddr_in) + 16, sizeof(sockaddr_in) + 16,
+						   &dwBytes, &op);
+	err = 0;
+	if (bRetVal == FALSE)
+	{
+		err = WSAGetLastError();
+		if (err != ERROR_IO_PENDING)
+			Error(_T("Call to AcceptEx() failed!\n"));
+		else
+		{
+			err = 0;
+			// Wait until a connection comes in
+			while (err == 0)
+			{
+				// Failures on the other thread cancels wait
+				err = m_Ctx.GetThreadErrorState();
+				if (err == 0)
+				{
+					DWORD dw = WaitForSingleObject(op.hEvent, 100);
+					// Continue waiting until connection arrives
+					if (dw == WAIT_TIMEOUT)
+						continue;
+					WSAResetEvent(op.hEvent);
+					// Connection arrived: break wait loop
+					if (dw == WAIT_OBJECT_0)
+					{
+						if (WSAGetOverlappedResult(sdListen, &op, &dwBytes, FALSE, &dwFlags) == FALSE)
+						{
+							err = WSAGetLastError();
+							Error(_T("Call to WSAGetOverlappedResult() failed!\n"));
+						}
+						break;
+					}
+					// Copy error to be later handled
+					err = dw;
+					Error(_T("Error waiting for incomming connection!\n"));
+				}
+				else
+					Error(_T("USB thread failed.\n"));
+			}
+		}
+	}
+	// Free local stuff
+	WSACloseEvent(op.hEvent);
 
 	//
 	// Close the file descriptor that we used for listening
 	//
 	closesocket(sdListen);
+	sdListen = 0;
+
+	// Handle pending errors
+	if (err)
+	{
+		// Cancel overlapped I/O
+		closesocket(sdAccept);
+		sdAccept = 0;
+		AtlThrow(HRESULT_FROM_WIN32(err));
+	}
 }
 
 
-int CGdbLink::ReadGdbMessage()
+void CGdbLink::Close()
 {
-	WSAPOLLFD fdarray[1];
-	fdarray[0].fd = sdAccept;
-	fdarray[0].events = POLLIN;
-	fdarray[0].revents = POLLRDNORM | POLLRDBAND;
-	int res = WSAPoll(fdarray, 1, 10);
-	if (res == SOCKET_ERROR)
+	if (sdListen)
 	{
-		DWORD dw = WSAGetLastError();
-		Error(_T("Call to WSAPoll() failed.\n"));
-		AtlThrow(HRESULT_FROM_WIN32(dw));
+		closesocket(sdListen);
+		sdListen = 0;
 	}
-	// Receive data
-	int rx = recv(sdAccept, (char*)m_Message.data(), CGdbStateMachine::MSGSIZE, 0);
-	if(rx == SOCKET_ERROR)
+	if (sdAccept)
 	{
-		DWORD dw = WSAGetLastError();
-		Error(_T("Call to recv() failed.\n"));
-		AtlThrow(HRESULT_FROM_WIN32(dw));
+		closesocket(sdAccept);
+		sdAccept = 0;
 	}
-	Debug(_T("%hs: recv returned %d\n"), __FUNCTION__, (int)rx);
-	// 
-	// if we RX 0 bytes it usually means that the other 
-	// side closed the connection
-	//
-	return rx;
+}
+
+
+bool CGdbLink::ReadGdbMessage()
+{
+	DWORD err = 0;
+	DWORD dwFlags, dwBytes;
+
+	WSAOVERLAPPED op;
+	memset(&op, 0, sizeof(op));
+	op.hEvent = WSACreateEvent();
+	if (op.hEvent == WSA_INVALID_EVENT)
+	{
+		err = WSAGetLastError();
+		Error(_T("Call to WSACreateEvent() failed!\n"));
+		AtlThrow(HRESULT_FROM_WIN32(err));
+	}
+
+	WSABUF bufs;
+	// Allocate buffer
+	m_Message.resize(CGdbStateMachine::MSGSIZE);
+	bufs.buf = (char*)m_Message.data();
+	bufs.len = CGdbStateMachine::MSGSIZE;
+
+	dwFlags = MSG_PARTIAL;
+	dwBytes = 0;
+	// Start data Receive
+	if (WSARecv(sdAccept, &bufs, 1, &dwBytes, &dwFlags, &op, NULL) == SOCKET_ERROR)
+	{
+		err = WSAGetLastError();
+		if(err == WSA_IO_PENDING)
+		{
+			err = 0;
+			while (err == 0)
+			{
+				err = m_Ctx.GetThreadErrorState();
+				if (err)
+					Error(_T("USB thread failed.\n"));
+				else
+				{
+					DWORD dw = WaitForSingleObject(op.hEvent, 100);
+					// Continue waiting until connection arrives
+					if (dw == WAIT_TIMEOUT)
+						continue;
+					WSAResetEvent(op.hEvent);
+					// Connection arrived: break wait loop
+					if (dw == WAIT_OBJECT_0)
+					{
+						if (WSAGetOverlappedResult(sdAccept, &op, &dwBytes, FALSE, &dwFlags) != FALSE)
+						{
+							m_Message.resize(dwBytes);
+							Info(_T("%d Bytes received, dwFlags = %d\n"), dwBytes, dwFlags);
+						}
+						else
+						{
+							err = WSAGetLastError();
+							Error(_T("Call to WSAGetOverlappedResult() failed with error %d!\n"), err);
+						}
+						break;
+					}
+					// Copy error to be later handled
+					err = dw;
+					Error(_T("Call to WaitForSingleObject() failed with error %d!\n"), err);
+				}
+			}
+		}
+		else if(err)
+		{
+			Error(_T("Call to WSARecv() failed with error %d!\n"), err);
+		}
+	}
+	// Free local stuff
+	WSACloseEvent(op.hEvent);
+
+	if (err == WSAECONNABORTED || dwBytes == 0)
+		return false;
+
+	if(err)
+		AtlThrow(HRESULT_FROM_WIN32(err));
+	return true;
 }
 
 
@@ -167,19 +324,10 @@ void CGdbLink::DoGdb()
 {
 	while (1)
 	{
-		int rx = ReadGdbMessage();
-		if (rx == 0)
-		{
-			// 
-			// if we RX 0 bytes it usually means that the other 
-			// side closed the connection
-			//
+		if (!ReadGdbMessage())
 			break;
-		}
-		m_Message.resize(rx);
-		size_t len = m_Message.size();
 		const BYTE *pBuf = m_Message.data();
-		m_Ctx.Dispatch(pBuf, len);
+		m_Ctx.ParseAndDispatch((const char *)pBuf, m_Message.size());
 	} // (while 1)
 }
 
@@ -217,7 +365,13 @@ void CGdbLink::HandleData(CGdbStateMachine &gdbCtx)
 	// machine will call gdb_packet_from_usb.
 	//
 
-	Debug(_T("%hs: '%hs'\n"), __FUNCTION__, gdbCtx);
+	Info(_T("%-22hs: GDB <-- ICDI: '%hs'\n"), __FUNCTION__, (const char *)gdbCtx);
 	send(sdAccept, gdbCtx, (int)gdbCtx.GetCount(), 0);
+}
+
+
+DWORD CGdbLink::OnGetThreadErrorState() const
+{
+	return 0;
 }
 

@@ -27,6 +27,7 @@
 #include <tchar.h>
 
 #include <WinSock2.h>
+#include <mswsock.h>
 #include <windows.h>
 
 //Pull in support for ATL

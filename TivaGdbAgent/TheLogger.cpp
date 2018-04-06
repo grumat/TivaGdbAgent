@@ -10,10 +10,12 @@ CLogger *CLogger::m_pLogger = NULL;
 CLogger::CLogger()
 {
 #ifdef _DEBUG
-	m_nLevel = DEBUG_LEVEL;
+	m_nLevel = INFO_LEVEL;
 #else
 	m_nLevel = WARN_LEVEL;
 #endif
+	m_dwStartTick = ::GetTickCount();
+	m_dwMainThreadID = GetCurrentThreadId();
 }
 
 
@@ -94,7 +96,20 @@ void CLogger::Log(Level_e level, const TCHAR *msg, va_list vargs)
 
 void CStdioLogger::OnLog(Level_e level, const TCHAR *msg)
 {
-	_fputts(msg, (level >= ERROR_LEVEL) ? stderr : stdout);
+	CAtlString s;
+	DWORD dif = ::GetTickCount() - m_dwStartTick;
+	s.Format(_T("%03d.%03d %c> "), dif / 1000, dif % 1000, "TM"[GetCurrentThreadId() == m_dwMainThreadID]);
+	if(level >= ERROR_LEVEL)
+	{
+		_fputts(s, stderr);
+		_fputts(msg, stderr);
+		ATLTRACE(_T("%s%s"), (LPCTSTR)s, (LPCTSTR)msg);
+	}
+	else
+	{
+		_fputts(s, stdout);
+		_fputts(msg, stdout);
+	}
 }
 
 

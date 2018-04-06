@@ -15,20 +15,18 @@ protected:
 	void Listen(unsigned int iPort);
 	bool IsListening() const { return sdAccept > 0; }
 	void DoGdb();
-	int ReadGdbMessage();
+	bool ReadGdbMessage();
 	const BYTE *GetMessage() const
 	{
 		return m_Message.data();
 	}
-	void Close()
-	{
-		closesocket(sdAccept);
-		sdAccept = 0;
-	}
+	void Close();
 
 	void HandleData(CGdbStateMachine &gdbCtx) override;
+	DWORD OnGetThreadErrorState() const override;
 
 protected:
+	SOCKET sdListen;
 	SOCKET sdAccept;
 	std::vector<BYTE> m_Message;
 	CGdbStateMachine m_Ctx;

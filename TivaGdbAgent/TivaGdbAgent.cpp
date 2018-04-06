@@ -37,7 +37,8 @@ int main(int argc, char *argv[])
 	{
 		s_pTivaObj = NULL;	// object does not exists anymore
 		_com_error err(e.m_hr);
-		_tprintf(_T(" %s\n"), err.ErrorMessage());
+		_ftprintf(stderr, _T("%s\n"), err.ErrorMessage());
+		ATLTRACE(_T("%s\n"), err.ErrorMessage());
 	}
 
 	return EXIT_SUCCESS;
