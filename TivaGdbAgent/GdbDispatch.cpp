@@ -11,23 +11,23 @@ CGdbStateMachine::CGdbStateMachine(IGdbDispatch &handler)
 	: m_Handler(handler)
 {
 	m_eState = GDB_IDLE;
-	m_pData = new BYTE[MSGSIZE];
-	m_iStart = m_iRd = 0;
+	m_Buffer.reserve(MSGSIZE);
+	m_iStart = 0;
 	m_ChkSum = 0;
 }
 
 
 CGdbStateMachine::~CGdbStateMachine()
 {
-	delete[] m_pData;
 }
 
 
 void CGdbStateMachine::Dispatch()
 {
-	m_pData[m_iRd] = 0;	// nul-terminates strings
+	OnBeforeDispatch();
 	m_Handler.HandleData(*this);
-	m_iStart = m_iRd = 0;
+	m_Buffer.resize(0);
+	m_iStart = 0;
 	m_eState = GDB_IDLE;
 }
 
@@ -74,13 +74,13 @@ void CGdbStateMachine::ParseAndDispatch(const char *pBuf, size_t len)
 #if OPT_CUT_NULS
 			if(ch == 0)
 			{
-				m_iRd = m_iStart;
+				m_Buffer.resize(m_iStart);
 				break;
 			}
 #endif
 			Debug(_T("  GDB_IDLE: '%hc'\n"), isprint(ch) ? ch : '.');
-			m_pData[m_iRd++] = ch;
-			m_iStart = m_iRd;
+			m_Buffer.push_back(ch);
+			m_iStart = m_Buffer.size();
 			if (ch == '$')
 			{
 				--m_iStart;	// where to cut an invalid packet
@@ -105,7 +105,7 @@ void CGdbStateMachine::ParseAndDispatch(const char *pBuf, size_t len)
 			if (ch == 0)
 			{
 				// Somehow NUL's arrive here. Just cut and preserve what is valid until now
-				m_iRd = m_iStart;
+				m_Buffer.resize(m_iStart);
 				m_eState = GDB_IDLE;
 				break;
 			}
@@ -124,7 +124,7 @@ void CGdbStateMachine::ParseAndDispatch(const char *pBuf, size_t len)
 				}
 			}
 
-			m_pData[m_iRd++] = ch;
+			m_Buffer.push_back(ch);
 			if (ch == '#')
 			{
 				if (IsDebugLevel())
@@ -143,29 +143,29 @@ void CGdbStateMachine::ParseAndDispatch(const char *pBuf, size_t len)
 			Debug(_T("  GDB_CSUM1: '%hc'\n"), ch);
 			m_ChkSum = hexchartoi(ch) << 4;
 			m_eState = GDB_CSUM2;
-			m_pData[m_iRd++] = ch;
+			m_Buffer.push_back(ch);
 			break;
 		case GDB_CSUM2:
 			Debug(_T("  GDB_CSUM2: '%hc'\n"), ch);
 			m_ChkSum |= hexchartoi(ch);
-			m_pData[m_iRd++] = ch;
+			m_Buffer.push_back(ch);
 			// Transmit the packet to the other device
 			Dispatch();
 			break;
 		}
 	}
 	// Still data on buffer in Idle state
-	if(m_iRd && m_eState == GDB_IDLE)
+	if(m_Buffer.size() != 0 && m_eState == GDB_IDLE)
 	{
 		if(nNakCount)
 		{
-			m_pData[0] = '-';
-			m_iRd = 1;
+			m_Buffer[0] = '-';
+			m_Buffer.resize(1);
 		}
 		else if(nAckCount)
 		{
-			m_pData[0] = '+';
-			m_iRd = 1;
+			m_Buffer[0] = '+';
+			m_Buffer.resize(1);
 		}
 		Dispatch();
 	}

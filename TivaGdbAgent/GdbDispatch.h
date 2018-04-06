@@ -23,25 +23,26 @@ public:
 	};
 
 public:
-	operator const BYTE *() const { return m_pData; }
-	operator const char *() const { return (const char *)m_pData; }
-	size_t GetCount() const { return m_iRd; }
+	operator const BYTE *() const { return (const BYTE *)m_Buffer.data(); }
+	operator const char *() const { return m_Buffer.data(); }
+	size_t GetCount() const { return m_Buffer.size(); }
 
 	void ParseAndDispatch(const char *pBuf, size_t len);
 	DWORD GetThreadErrorState() const { return m_Handler.OnGetThreadErrorState(); }
 
 protected:
+	//! Prepare buffer and dispatch data to other link
 	void Dispatch();
+	//! Let override intercept packet buffer before sending to other link
+	virtual void OnBeforeDispatch() {/* Nothing to do at the base*/ }
 
 protected:
 	//! A target to receive parsed GDB data
 	IGdbDispatch &m_Handler;
 	//! Current state machine status
 	GDB_STATE m_eState;
-	//! Pointer to the data
-	BYTE *m_pData;
-	//! Valid bytes on buffer
-	size_t m_iRd;
+	//! Data buffer
+	std::string m_Buffer;
 	//! Payload packet start
 	size_t m_iStart;
 	//! Checksum
