@@ -285,12 +285,7 @@ bool CGdbLink::ReadGdbMessage()
 					// Connection arrived: break wait loop
 					if (dw == WAIT_OBJECT_0)
 					{
-						if (WSAGetOverlappedResult(sdAccept, &op, &dwBytes, FALSE, &dwFlags) != FALSE)
-						{
-							m_Message.resize(dwBytes);
-							Info(_T("%d Bytes received, dwFlags = %d\n"), dwBytes, dwFlags);
-						}
-						else
+						if (WSAGetOverlappedResult(sdAccept, &op, &dwBytes, FALSE, &dwFlags) == FALSE)
 						{
 							err = WSAGetLastError();
 							Error(_T("Call to WSAGetOverlappedResult() failed with error %d!\n"), err);
@@ -316,6 +311,8 @@ bool CGdbLink::ReadGdbMessage()
 
 	if(err)
 		AtlThrow(HRESULT_FROM_WIN32(err));
+	m_Message.resize(dwBytes);
+	Debug(_T("%d Bytes received, dwFlags = %d\n"), dwBytes, dwFlags);
 	return true;
 }
 
@@ -365,7 +362,7 @@ void CGdbLink::HandleData(CGdbStateMachine &gdbCtx)
 	// machine will call gdb_packet_from_usb.
 	//
 
-	Info(_T("%-22hs: GDB <-- ICDI: '%hs'\n"), __FUNCTION__, (const char *)gdbCtx);
+	Info(_T("%-22hs: GDB <-- ICDI: '%s'\n"), __FUNCTION__, (LPCTSTR)gdbCtx.GetPrintableString());
 	send(sdAccept, gdbCtx, (int)gdbCtx.GetCount(), 0);
 }
 

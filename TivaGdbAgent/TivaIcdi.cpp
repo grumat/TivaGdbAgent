@@ -20,7 +20,7 @@ CTivaIcdi::CTivaIcdi()
 	m_dwThreadExitCode = 0;
 	m_hReadThread = NULL;
 	m_fRunning = false;
-	m_pUsbRead = NULL;
+	m_pStateMachine = NULL;
 }
 
 
@@ -71,7 +71,7 @@ void CTivaIcdi::Open(IGdbDispatch &rReadPackets)
 
 	m_PipeIn = 0;
 	m_PipeOut = 0;
-	m_pUsbRead = &rReadPackets;
+	m_pStateMachine = new CTivaGdbStateMachine(rReadPackets);
 
 	WinUSB::String name = GetTivaIcdiDevice();
 	if (!m_Device.Initialize(name.c_str()))
@@ -284,9 +284,12 @@ void CTivaIcdi::HandleData(CGdbStateMachine &gdbCtx)
 	if (m_dwThreadExitCode != 0)
 		AtlThrow(HRESULT_FROM_WIN32(m_dwThreadExitCode));
 
+	// Updates the state machine so we can rework ICDI responses
+	m_pStateMachine->InterceptTransmitLink(gdbCtx);
+
 	const char *pChar = gdbCtx;
 
-	Info(_T("%-22hs: GDB --> ICDI: '%hS' (%d)\n"), __FUNCTION__, pChar, gdbCtx.GetCount());
+	Info(_T("%-22hs: GDB --> ICDI: '%s'\n"), __FUNCTION__, (LPCTSTR)gdbCtx.GetPrintableString());
 
 	ULONG xfered;
 	if (!m_Device.WritePipe(m_PipeOut, (PUCHAR)pChar, (ULONG)gdbCtx.GetCount(), &xfered, NULL))
@@ -313,7 +316,6 @@ void __cdecl CTivaIcdi::ReadThread(LPVOID pThis)
 
 void CTivaIcdi::ReadThread()
 {
-	CGdbStateMachine gdbCtx(*m_pUsbRead);
 	BYTE buffer[READ_BUFFER_BYTES + 1];
 	ULONG xfered;
 	OVERLAPPED op;
@@ -365,7 +367,8 @@ void CTivaIcdi::ReadThread()
 				m_Device.GetOverlappedResult(&op, &xfered, FALSE);
 			buffer[xfered] = 0;
 			Debug(_T("%hs: USB Pipe IN:'%hs'\n"), __FUNCTION__, buffer);
-			gdbCtx.ParseAndDispatch((const char *)buffer, xfered);
+			if(m_pStateMachine)
+				m_pStateMachine->ParseAndDispatch((const char *)buffer, xfered);
 		}
 	}
 	CloseHandle(op.hEvent);
@@ -383,6 +386,9 @@ void CTivaIcdi::Close()
 		::Sleep(1);
 	}
 	while (m_hReadThread != 0 && --retry);
+	// Free the state machine
+	delete m_pStateMachine;
+	m_pStateMachine = NULL;
 
 	// Clear everything
 	ZeroMemory(&m_DeviceDescriptor, sizeof(m_DeviceDescriptor));

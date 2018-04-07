@@ -6,7 +6,7 @@ class CGdbLink : public IGdbDispatch
 {
 public:
 	CGdbLink(IGdbDispatch &link_handler);
-	~CGdbLink();
+	virtual ~CGdbLink();
 
 public:
 	void Serve(int iPort);

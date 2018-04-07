@@ -14,7 +14,7 @@ class CGdbStateMachine
 {
 public:
 	CGdbStateMachine(IGdbDispatch &handler);
-	~CGdbStateMachine();
+	virtual ~CGdbStateMachine();
 
 	enum GDB_STATE { GDB_IDLE, GDB_PAYLOAD, GDB_CSUM1, GDB_CSUM2 };
 	enum
@@ -26,6 +26,8 @@ public:
 	operator const BYTE *() const { return (const BYTE *)m_Buffer.data(); }
 	operator const char *() const { return m_Buffer.data(); }
 	size_t GetCount() const { return m_Buffer.size(); }
+	//! Returns a escaped string of buffer contents
+	CAtlString GetPrintableString() const;
 
 	void ParseAndDispatch(const char *pBuf, size_t len);
 	DWORD GetThreadErrorState() const { return m_Handler.OnGetThreadErrorState(); }

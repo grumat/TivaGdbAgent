@@ -138,6 +138,7 @@
     <ClInclude Include="GdbDispatch.h" />
     <ClInclude Include="GdbLink.h" />
     <ClInclude Include="TheLogger.h" />
+    <ClInclude Include="TivaGdbStateMachine.h" />
     <ClInclude Include="TivaIcdi.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
@@ -147,6 +148,7 @@
     <ClCompile Include="GdbDispatch.cpp" />
     <ClCompile Include="GdbLink.cpp" />
     <ClCompile Include="TheLogger.cpp" />
+    <ClCompile Include="TivaGdbStateMachine.cpp" />
     <ClCompile Include="TivaIcdi.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

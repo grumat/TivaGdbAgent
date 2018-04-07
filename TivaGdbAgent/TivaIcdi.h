@@ -1,13 +1,13 @@
 #pragma once
 
-#include "GdbDispatch.h"
+#include "TivaGdbStateMachine.h"
 
 
 class CTivaIcdi : public IGdbDispatch
 {
 public:
 	CTivaIcdi();
-	~CTivaIcdi();
+	virtual ~CTivaIcdi();
 	enum
 	{
 		VID = 0x1cbe,
@@ -54,6 +54,6 @@ protected:
 	volatile DWORD m_dwThreadExitCode;
 	volatile uintptr_t m_hReadThread;
 	volatile bool m_fRunning;
-	IGdbDispatch *m_pUsbRead;
+	CTivaGdbStateMachine *m_pStateMachine;
 };
 

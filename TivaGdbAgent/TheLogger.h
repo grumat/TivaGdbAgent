@@ -16,7 +16,7 @@ class CLogger
 {
 public:
 	CLogger();
-	~CLogger();
+	virtual ~CLogger();
 
 public:
 	void Log(Level_e level, const TCHAR *msg, va_list vargs);
