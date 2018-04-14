@@ -4,11 +4,12 @@ namespace Logger
 {
 enum Level_e
 {
-	OFF,
-	ERROR_LEVEL,
-	WARN_LEVEL,
-	INFO_LEVEL,
-	DEBUG_LEVEL,
+	OFF,			//!< Quiet mode
+	ERROR_LEVEL,	//!< Show only error messages
+	WARN_LEVEL,		//!< Show warnings and error messages
+	INFO_LEVEL,		//!< Show really essential messages, warnings and errors too
+	DETAIL_LEVEL,	//!< Show internal work messages, essentials, warnings and errors too
+	DEBUG_LEVEL,	//!< Show all messages including lots of debug stuff
 };
 
 
@@ -44,6 +45,7 @@ protected:
 	Level_e m_nLevel;
 	DWORD m_dwStartTick;
 	DWORD m_dwMainThreadID;
+	CComCriticalSection m_Lock;
 
 private:
 	static void Dispose();
@@ -60,7 +62,10 @@ inline CLogger & TheLogger()
 //! Debug messages
 void Debug(const TCHAR *msg, ...);
 inline bool IsDebugLevel() { return TheLogger().OnTestLevel(DEBUG_LEVEL); }
-//! Info messages
+//! Detail messages
+void Detail(const TCHAR *msg, ...);
+inline bool IsDetailLevel() { return TheLogger().OnTestLevel(DETAIL_LEVEL); }
+//! Info messages (this one goes to the stdout)
 void Info(const TCHAR *msg, ...);
 inline bool IsInfoLevel() { return TheLogger().OnTestLevel(INFO_LEVEL); }
 //! Warning messages

@@ -137,6 +137,7 @@
   <ItemGroup>
     <ClInclude Include="GdbDispatch.h" />
     <ClInclude Include="GdbLink.h" />
+    <ClInclude Include="GdbPacket.h" />
     <ClInclude Include="TheLogger.h" />
     <ClInclude Include="TivaGdbStateMachine.h" />
     <ClInclude Include="TivaIcdi.h" />
@@ -147,6 +148,7 @@
   <ItemGroup>
     <ClCompile Include="GdbDispatch.cpp" />
     <ClCompile Include="GdbLink.cpp" />
+    <ClCompile Include="GdbPacket.cpp" />
     <ClCompile Include="TheLogger.cpp" />
     <ClCompile Include="TivaGdbStateMachine.cpp" />
     <ClCompile Include="TivaIcdi.cpp" />

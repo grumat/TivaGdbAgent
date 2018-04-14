@@ -36,6 +36,7 @@
 //Pull in support for STL
 #include <string>
 #include <vector>
+#include <memory>
 
 #include <winusb.h>
 #include <setupapi.h>

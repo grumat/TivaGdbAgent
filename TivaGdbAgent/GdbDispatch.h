@@ -1,5 +1,7 @@
 #pragma once
 
+#include "GdbPacket.h"
+
 
 class CGdbStateMachine;
 class IGdbDispatch
@@ -23,11 +25,12 @@ public:
 	};
 
 public:
-	operator const BYTE *() const { return (const BYTE *)m_Buffer.data(); }
-	operator const char *() const { return m_Buffer.data(); }
+	operator const UINT8 *() const { return m_Buffer.data(); }
+	operator const char *() const { return (const char *)m_Buffer.data(); }
+	operator const CGdbPacket &() const { return m_Buffer; }
 	size_t GetCount() const { return m_Buffer.size(); }
 	//! Returns a escaped string of buffer contents
-	CAtlString GetPrintableString() const;
+	CAtlString GetPrintableString() const { return m_Buffer.GetPrintableString(); }
 
 	void ParseAndDispatch(const char *pBuf, size_t len);
 	DWORD GetThreadErrorState() const { return m_Handler.OnGetThreadErrorState(); }
@@ -44,7 +47,7 @@ protected:
 	//! Current state machine status
 	GDB_STATE m_eState;
 	//! Data buffer
-	std::string m_Buffer;
+	CGdbPacket m_Buffer;
 	//! Payload packet start
 	size_t m_iStart;
 	//! Checksum

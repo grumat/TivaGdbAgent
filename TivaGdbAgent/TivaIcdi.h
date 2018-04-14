@@ -36,6 +36,12 @@ protected:
 
 protected:
 	WinUSB::String GetStringDescriptor(UCHAR index);
+	void LoadIcdiAttr();
+	//! Synchronous send and receive during "Eat Data Mode"
+	bool SendReceive(const CGdbPacket &send, CGdbPacket &receive);
+	void WritePipe(const CGdbPacket &data);
+
+protected:
 	static void __cdecl ReadThread(LPVOID pThis);
 	void ReadThread();
 
@@ -54,6 +60,7 @@ protected:
 	volatile DWORD m_dwThreadExitCode;
 	volatile uintptr_t m_hReadThread;
 	volatile bool m_fRunning;
+	HANDLE m_hReady;
 	CTivaGdbStateMachine *m_pStateMachine;
 };
 

@@ -5,6 +5,9 @@
 using namespace Logger;
 
 
+////////////////////////////////////////////
+// CGdbStateMachine
+
 CGdbStateMachine::CGdbStateMachine(IGdbDispatch &handler)
 	: m_Handler(handler)
 {
@@ -24,8 +27,11 @@ void CGdbStateMachine::Dispatch()
 {
 	if (m_Buffer.size() > 0)
 	{
+		// Let override work the packet out
 		OnBeforeDispatch();
-		m_Handler.HandleData(*this);
+		// Override may have skipped the packet...
+		if (m_Buffer.size() > 0)
+			m_Handler.HandleData(*this);
 	}
 	m_Buffer.resize(0);
 	m_iStart = 0;
@@ -72,8 +78,10 @@ void CGdbStateMachine::ParseAndDispatch(const char *pBuf, size_t len)
 		switch (m_eState)
 		{
 		case GDB_IDLE:
+			// On idle state, only '+', '-', '$' and '^C' are defined by protocol
 			if(ch == 0)
 			{
+				// Nulls are simply dropped here...
 				m_Buffer.resize(m_iStart);
 				break;
 			}
@@ -161,57 +169,5 @@ void CGdbStateMachine::ParseAndDispatch(const char *pBuf, size_t len)
 		}
 		Dispatch();
 	}
-}
-
-
-CAtlString CGdbStateMachine::GetPrintableString() const
-{
-	CAtlString out, hex, ascii;
-	size_t ctl_cnt = 0;
-	size_t ch_cnt = 0;
-	bool use_hex = false;
-	for(std::string::const_iterator it = m_Buffer.cbegin(); it != m_Buffer.cend(); ++it)
-	{
-		UINT8 ch = (UINT8)*it;
-		++ch_cnt;
-		// Hex formatting
-		if (!hex.IsEmpty())
-			hex += _T(' ');
-		hex.AppendFormat(_T("%02x"), ch);
-		// ASCI formatting
-		if(ch < _T(' ') || ch == _T('\x7f') || ch == _T('\xff'))	// LATIN-1
-		{
-			ascii.AppendFormat(_T("\\x%02x"), ch);
-			++ctl_cnt;
-		}
-		else
-		{
-			ascii += ch;
-			if (ch == _T(':'))	// vFlashWritePacket use a mix between ASCII and hex
-			{
-				if (ch_cnt > 8 && 4*ctl_cnt > ch_cnt)
-				{
-					use_hex = true;
-					out += hex;
-					hex = _T("");
-					ascii = _T("");
-				}
-				else
-				{
-					out += ascii;
-					ch_cnt = ctl_cnt = 0;
-					hex = _T("");
-					ascii = _T("");
-				}
-			}
-		}
-	}
-	if (!ascii.IsEmpty())
-	{
-		if (!use_hex)
-			use_hex = ch_cnt > 8 && 4 * ctl_cnt > ch_cnt;
-		out += (use_hex) ? hex : ascii;
-	}
-	return out;
 }
 

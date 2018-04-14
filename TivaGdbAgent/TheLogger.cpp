@@ -10,12 +10,13 @@ CLogger *CLogger::m_pLogger = NULL;
 CLogger::CLogger()
 {
 #ifdef _DEBUG
-	m_nLevel = INFO_LEVEL;
+	m_nLevel = DETAIL_LEVEL;
 #else
-	m_nLevel = WARN_LEVEL;
+	m_nLevel = INFO_LEVEL;
 #endif
 	m_dwStartTick = ::GetTickCount();
 	m_dwMainThreadID = GetCurrentThreadId();
+	m_Lock.Init();
 }
 
 
@@ -82,11 +83,20 @@ void Info(const TCHAR *msg, ...)
 }
 
 
+void Detail(const TCHAR *msg, ...)
+{
+	va_list vargs;
+	va_start(vargs, msg);
+	TheLogger().Log(DETAIL_LEVEL, msg, vargs);
+	va_end(vargs);
+}
+
+
 void CLogger::Log(Level_e level, const TCHAR *msg, va_list vargs)
 {
 	if(OnTestLevel(level))
 	{
-		CComAutoCriticalSection lock;
+		CComCritSecLock<CComCriticalSection> lock(m_Lock);
 		CAtlString s;
 		s.FormatV(msg, vargs);
 		OnLog(level, s);
@@ -99,16 +109,16 @@ void CStdioLogger::OnLog(Level_e level, const TCHAR *msg)
 	CAtlString s;
 	DWORD dif = ::GetTickCount() - m_dwStartTick;
 	s.Format(_T("%03d.%03d %c> "), dif / 1000, dif % 1000, "TM"[GetCurrentThreadId() == m_dwMainThreadID]);
-	if(level >= ERROR_LEVEL)
+	if(level == INFO_LEVEL)
+	{
+		_fputts(s, stdout);
+		_fputts(msg, stdout);
+	}
+	else
 	{
 		_fputts(s, stderr);
 		_fputts(msg, stderr);
 		ATLTRACE(_T("%s%s"), (LPCTSTR)s, (LPCTSTR)msg);
-	}
-	else
-	{
-		_fputts(s, stdout);
-		_fputts(msg, stdout);
 	}
 }
 

@@ -1,3 +1,34 @@
+/*
+Notes:
+Dump of ICDI firmware revealed the following tokens that seems to extend GDB protocol:
+	- debug
+		"debug clock \0"
+		"debug sreset"
+		"debug creset"
+		"debug hreset"
+		"debug disable"
+	- set
+		"set vectorcatch 0"
+	- version
+	- "X\x1c"
+	- dfu-update
+	- mfg
+	- mode
+
+	- disable
+	- speed
+	- trace
+	- unlock
+	- sreset
+	- creset
+	- hreset
+	- resettype
+	- vectorcatch
+	- stepirq
+	- xtal
+*/
+
+
 #include "stdafx.h"
 #include "TivaIcdi.h"
 #include "TheLogger.h"
@@ -21,6 +52,7 @@ CTivaIcdi::CTivaIcdi()
 	m_hReadThread = NULL;
 	m_fRunning = false;
 	m_pStateMachine = NULL;
+	m_hReady = NULL;
 }
 
 
@@ -83,7 +115,7 @@ void CTivaIcdi::Open(IGdbDispatch &rReadPackets)
 	}
 
 	// Let's query for the device descriptor
-	Info(_T("Getting device descriptor\n"));
+	Detail(_T("Getting device descriptor\n"));
 	memset(&m_DeviceDescriptor, 0, sizeof(m_DeviceDescriptor));
 	ULONG nTransferred = 0;
 	if (!m_Device.GetDescriptor(USB_DEVICE_DESCRIPTOR_TYPE, 0, 0, reinterpret_cast<PUCHAR>(&m_DeviceDescriptor), sizeof(m_DeviceDescriptor), &nTransferred))
@@ -124,7 +156,7 @@ void CTivaIcdi::Open(IGdbDispatch &rReadPackets)
 	}
 
 	// Let's query for the configuration descriptor
-	Info(_T("Getting configuration descriptor\n"));
+	Detail(_T("Getting configuration descriptor\n"));
 	memset(&m_ConfigDescriptor, 0, sizeof(m_ConfigDescriptor));
 	nTransferred = 0;
 	if (!m_Device.GetDescriptor(USB_CONFIGURATION_DESCRIPTOR_TYPE, 0, 0, reinterpret_cast<PUCHAR>(&m_ConfigDescriptor), sizeof(m_ConfigDescriptor), &nTransferred))
@@ -178,7 +210,7 @@ void CTivaIcdi::Open(IGdbDispatch &rReadPackets)
 	Debug(_T("Current alternate setting %d\n"), static_cast<int>(m_AlternateSetting));
 
 	//Let's query for interface and pipe information
-	Info(_T("Querying device interfaces and pipes\n"));
+	Detail(_T("Querying device interfaces and pipes\n"));
 	for (UCHAR interfaceNumber = 0; interfaceNumber <= 0xFF; ++interfaceNumber)
 	{
 		USB_INTERFACE_DESCRIPTOR interfaceDescriptor;
@@ -270,7 +302,81 @@ void CTivaIcdi::Open(IGdbDispatch &rReadPackets)
 	// Creates the read thread
 	m_fRunning = true;
 	m_dwThreadExitCode = 0;
+	m_hReady = CreateEvent(NULL, TRUE, FALSE, NULL);
 	m_hReadThread = _beginthread(ReadThread, 128 * 1024, (LPVOID)this);
+	DWORD err = WaitForSingleObject(m_hReady, 5000);
+	CloseHandle(m_hReady);
+	m_hReady = NULL;
+	if (err != WAIT_OBJECT_0)
+	{
+		Error(_T("Read thread failed to be ready with error code %d\n"), err);
+		AtlThrow(HRESULT_FROM_WIN32(err));
+	}
+	LoadIcdiAttr();
+}
+
+
+void CTivaIcdi::WritePipe(const CGdbPacket &data)
+{
+	const char *pChar = data;
+
+	Detail(_T("%-22hs: GDB --> ICDI: '%s'\n"), __FUNCTION__, (LPCTSTR)data.GetPrintableString());
+
+	ULONG xfered;
+	if (!m_Device.WritePipe(m_PipeOut, (PUCHAR)pChar, (ULONG)data.GetCount(), &xfered, NULL))
+	{
+		DWORD err = GetLastError();
+		Error(_T("Failed to write to USB Pipe\n"));
+		AtlThrow(HRESULT_FROM_WIN32(err));
+	}
+}
+
+
+bool CTivaIcdi::SendReceive(const CGdbPacket &send, CGdbPacket &receive)
+{
+	HANDLE hEvent = m_pStateMachine->GetReceiveEventHandle();
+	ResetEvent(hEvent);
+	WritePipe(send);
+	DWORD err = WaitForSingleObject(hEvent, 200);
+	if (err != WAIT_OBJECT_0 && err != WAIT_TIMEOUT)
+	{
+		Error(_T("Command '%s' returned %d\n"), (LPCTSTR)send.GetPrintableString(), err);
+		AtlThrow(HRESULT_FROM_WIN32(err));
+	}
+	CTivaGdbStateMachine::LocalStore res = m_pStateMachine->GetLocalStoreBuffer();
+	if(res->m_Buffer.GetCount())
+	{
+		receive = res->m_Buffer;
+		Debug(_T("Response: '%s'\n"), (LPCTSTR)res->m_Buffer.GetPrintableString());
+	}
+	if (err == WAIT_TIMEOUT)
+		return false;
+	return true;
+}
+
+
+void CTivaIcdi::LoadIcdiAttr()
+{
+	CGdbPacket packet, response;
+
+	HANDLE hRead = ::CreateEvent(NULL, FALSE, FALSE, NULL);
+	try
+	{
+		m_pStateMachine->SetupEatDataMode(hRead);
+		packet.MakeRemoteCmd("version");
+		if(SendReceive(packet, response))
+		{
+			Info(_T("Response: '%hs'\n"), response.UnhexifyPayload().c_str());
+		}
+	}
+	catch(...)
+	{
+		m_pStateMachine->SetupEatDataMode(NULL);
+		CloseHandle(hRead);
+		throw;
+	}
+	m_pStateMachine->SetupEatDataMode(NULL);
+	CloseHandle(hRead);
 }
 
 
@@ -287,17 +393,7 @@ void CTivaIcdi::HandleData(CGdbStateMachine &gdbCtx)
 	// Updates the state machine so we can rework ICDI responses
 	m_pStateMachine->InterceptTransmitLink(gdbCtx);
 
-	const char *pChar = gdbCtx;
-
-	Info(_T("%-22hs: GDB --> ICDI: '%s'\n"), __FUNCTION__, (LPCTSTR)gdbCtx.GetPrintableString());
-
-	ULONG xfered;
-	if (!m_Device.WritePipe(m_PipeOut, (PUCHAR)pChar, (ULONG)gdbCtx.GetCount(), &xfered, NULL))
-	{
-		DWORD err = GetLastError();
-		Error(_T("Failed to write to USB Pipe\n"));
-		AtlThrow(HRESULT_FROM_WIN32(err));
-	}
+	WritePipe(gdbCtx);
 }
 
 
@@ -317,6 +413,8 @@ void __cdecl CTivaIcdi::ReadThread(LPVOID pThis)
 void CTivaIcdi::ReadThread()
 {
 	BYTE buffer[READ_BUFFER_BYTES + 1];
+	DWORD dwStartTime = GetTickCount();
+	bool fLockout = true;
 	ULONG xfered;
 	OVERLAPPED op;
 	memset(&op, 0, sizeof(op));
@@ -346,6 +444,18 @@ void CTivaIcdi::ReadThread()
 				Warning(_T("%hs: Read thread was cancelled\n"), __FUNCTION__);
 				break;
 			}
+
+			if (fLockout)
+			{
+				// delay data transfer start to throw any buffered data away
+				if ((GetTickCount() - dwStartTime) >= 90)
+				{
+					if (m_hReady)
+						SetEvent(m_hReady);
+					fLockout = false;
+				}
+			}
+
 			DWORD dw = WaitForSingleObject(op.hEvent, 100);
 			if (dw == WAIT_TIMEOUT)
 				continue;
@@ -360,8 +470,8 @@ void CTivaIcdi::ReadThread()
 			else
 				break;	// fPending is true!!!
 		}
-		// Read if not canceled
-		if(m_fRunning)
+		// Read if not canceled or lockout
+		if(m_fRunning && ! fLockout)
 		{
 			if (fPending)
 				m_Device.GetOverlappedResult(&op, &xfered, FALSE);

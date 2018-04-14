@@ -20,6 +20,7 @@ CGdbLink::CGdbLink(IGdbDispatch &link_handler)
 	static bool init = false;
 	sdListen = 0;
 	sdAccept = 0;
+	m_fEnableXmit = false;
 	if(!init)
 	{
 		WORD wVersionRequested;
@@ -96,7 +97,7 @@ void CGdbLink::Listen(unsigned int iPort)
 	//
 	// Bind out file descriptor to the port/address
 	//
-	Info(_T("Bind to port %d\n"), iPort);
+	Detail(_T("Bind to port %d\n"), iPort);
 	if (bind(sdListen, (struct sockaddr *) &sin, sizeof(sin)) == INVALID_SOCKET)
 	{
 		DWORD dw = WSAGetLastError();
@@ -336,15 +337,18 @@ void CGdbLink::Serve(int iPort)
 		Listen(iPort);
 		if (IsListening())
 		{
+			m_fEnableXmit = true;
 			try
 			{
 				//
 				// Do the bridging between the socket and the usb bulk device
 				//
 				DoGdb();
+				m_fEnableXmit = false;
 			}
 			catch (...)
 			{
+				m_fEnableXmit = false;
 				Close();
 				throw;
 			}
@@ -361,9 +365,11 @@ void CGdbLink::HandleData(CGdbStateMachine &gdbCtx)
 	// machine.  When a complete GDB packet has been RX'ed the state
 	// machine will call gdb_packet_from_usb.
 	//
-
-	Info(_T("%-22hs: GDB <-- ICDI: '%s'\n"), __FUNCTION__, (LPCTSTR)gdbCtx.GetPrintableString());
-	send(sdAccept, gdbCtx, (int)gdbCtx.GetCount(), 0);
+	if(m_fEnableXmit)
+	{
+		Detail(_T("%-22hs: GDB <-- ICDI: '%s'\n"), __FUNCTION__, (LPCTSTR)gdbCtx.GetPrintableString());
+		send(sdAccept, gdbCtx, (int)gdbCtx.GetCount(), 0);
+	}
 }
 
 

@@ -28,6 +28,7 @@ protected:
 protected:
 	SOCKET sdListen;
 	SOCKET sdAccept;
+	volatile bool m_fEnableXmit;
 	std::vector<BYTE> m_Message;
 	CGdbStateMachine m_Ctx;
 };
