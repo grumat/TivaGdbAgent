@@ -158,12 +158,12 @@ void CGdbStateMachine::ParseAndDispatch(const char *pBuf, size_t len)
 	{
 		if(nNakCount)
 		{
-			m_Buffer[0] = '-';
+			m_Buffer.at(0) = '-';
 			m_Buffer.resize(1);
 		}
 		else if(nAckCount)
 		{
-			m_Buffer[0] = '+';
+			m_Buffer.at(0) = '+';
 			m_Buffer.resize(1);
 		}
 		Dispatch();
