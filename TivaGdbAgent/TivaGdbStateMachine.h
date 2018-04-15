@@ -41,6 +41,7 @@ public:
 #endif
 #if OPT_SEND_FEATURES
 		extendedFeatures,
+		extendedFeatures_2,
 #endif
 	};
 
@@ -61,6 +62,7 @@ protected:
 #endif
 #if OPT_SEND_FEATURES
 	void SendFeaturesSupported();
+	void SendFeaturesXml();
 #endif
 
 protected:

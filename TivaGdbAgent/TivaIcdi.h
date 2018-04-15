@@ -12,7 +12,7 @@ public:
 	{
 		VID = 0x1cbe,
 		PID = 0xfd,
-		READ_BUFFER_BYTES = CGdbStateMachine::MSGSIZE,
+		READ_BUFFER_BYTES = CGdbPacket::MSGSIZE,
 	};
 
 public:

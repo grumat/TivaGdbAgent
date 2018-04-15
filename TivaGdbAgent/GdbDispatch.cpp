@@ -12,7 +12,6 @@ CGdbStateMachine::CGdbStateMachine(IGdbDispatch &handler)
 	: m_Handler(handler)
 {
 	m_eState = GDB_IDLE;
-	m_Buffer.reserve(MSGSIZE);
 	m_iStart = 0;
 	m_ChkSum = 0;
 }

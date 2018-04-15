@@ -316,6 +316,33 @@ void CTivaIcdi::Open(IGdbDispatch &rReadPackets)
 }
 
 
+void CTivaIcdi::Close()
+{
+	// Disconnect thread and wait until it stops (with timeout)
+	m_fRunning = false;
+	int retry = 1000;
+	do
+	{
+		::Sleep(1);
+	}
+	while (m_hReadThread != 0 && --retry);
+	// Free the state machine
+	delete m_pStateMachine;
+	m_pStateMachine = NULL;
+
+	// Clear everything
+	ZeroMemory(&m_DeviceDescriptor, sizeof(m_DeviceDescriptor));
+	ZeroMemory(&m_ConfigDescriptor, sizeof(m_ConfigDescriptor));
+	m_StringDescriptor.clear();
+	m_StringMfg.clear();
+	m_StringSerial.clear();
+	m_AlternateSetting = 0;
+	m_PipeIn = 0;
+	m_PipeOut = 0;
+	m_Device.Free();
+}
+
+
 void CTivaIcdi::WritePipe(const CGdbPacket &data)
 {
 	const char *pChar = data;
@@ -422,7 +449,7 @@ void CTivaIcdi::ReadThread()
 	while (m_fRunning)
 	{
 		bool fPending = false;
-		if(! m_Device.ReadPipe(m_PipeIn, buffer, READ_BUFFER_BYTES, &xfered, &op))
+		if (!m_Device.ReadPipe(m_PipeIn, buffer, READ_BUFFER_BYTES, &xfered, &op))
 		{
 			DWORD err = GetLastError();
 			if (err != ERROR_IO_PENDING)
@@ -471,44 +498,17 @@ void CTivaIcdi::ReadThread()
 				break;	// fPending is true!!!
 		}
 		// Read if not canceled or lockout
-		if(m_fRunning && ! fLockout)
+		if (m_fRunning && !fLockout)
 		{
 			if (fPending)
 				m_Device.GetOverlappedResult(&op, &xfered, FALSE);
 			buffer[xfered] = 0;
 			Debug(_T("%hs: USB Pipe IN:'%hs'\n"), __FUNCTION__, buffer);
-			if(m_pStateMachine)
+			if (m_pStateMachine)
 				m_pStateMachine->ParseAndDispatch((const char *)buffer, xfered);
 		}
 	}
 	CloseHandle(op.hEvent);
 	m_hReadThread = 0;
-}
-
-
-void CTivaIcdi::Close()
-{
-	// Disconnect thread and wait until it stops (with timeout)
-	m_fRunning = false;
-	int retry = 1000;
-	do
-	{
-		::Sleep(1);
-	}
-	while (m_hReadThread != 0 && --retry);
-	// Free the state machine
-	delete m_pStateMachine;
-	m_pStateMachine = NULL;
-
-	// Clear everything
-	ZeroMemory(&m_DeviceDescriptor, sizeof(m_DeviceDescriptor));
-	ZeroMemory(&m_ConfigDescriptor, sizeof(m_ConfigDescriptor));
-	m_StringDescriptor.clear();
-	m_StringMfg.clear();
-	m_StringSerial.clear();
-	m_AlternateSetting = 0;
-	m_PipeIn = 0;
-	m_PipeOut = 0;
-	m_Device.Free();
 }
 

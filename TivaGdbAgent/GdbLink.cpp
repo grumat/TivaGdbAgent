@@ -258,9 +258,9 @@ bool CGdbLink::ReadGdbMessage()
 
 	WSABUF bufs;
 	// Allocate buffer
-	m_Message.resize(CGdbStateMachine::MSGSIZE);
+	m_Message.resize(CGdbPacket::MSGSIZE);
 	bufs.buf = (char*)m_Message.data();
-	bufs.len = CGdbStateMachine::MSGSIZE;
+	bufs.len = CGdbPacket::MSGSIZE;
 
 	dwFlags = MSG_PARTIAL;
 	dwBytes = 0;

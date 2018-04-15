@@ -19,10 +19,6 @@ public:
 	virtual ~CGdbStateMachine();
 
 	enum GDB_STATE { GDB_IDLE, GDB_PAYLOAD, GDB_CSUM1, GDB_CSUM2 };
-	enum
-	{
-		MSGSIZE = 8192,
-	};
 
 public:
 	operator const UINT8 *() const { return m_Buffer.data(); }
@@ -34,6 +30,11 @@ public:
 
 	void ParseAndDispatch(const char *pBuf, size_t len);
 	DWORD GetThreadErrorState() const { return m_Handler.OnGetThreadErrorState(); }
+
+	bool ExtractPayLoad(CRawBuffer &payload, CGdbPacket *head = NULL, CGdbPacket *tail = NULL) const
+	{
+		return m_Buffer.ExtractPayLoad(payload, head, tail);
+	}
 
 protected:
 	//! Prepare buffer and dispatch data to other link
