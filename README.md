@@ -1,4 +1,5 @@
 Windows version of the TI Tiva/Stellaris lm4tools
+Windows version of the TI Tiva/Stellaris lm4tools
 =================================================
 
 ## Target
@@ -43,8 +44,8 @@ Then, in your project directory, something like this:
 (gdb) load
 Loading section .text, size 0x458 lma 0x8000000
 Loading section .data, size 0x8 lma 0x8000458
-Start address 0x80001c1, load size 1120
-Transfer rate: 1 KB/sec, 560 bytes/write.
+Start address 0x00000000, load size 109288
+Transfer rate: 17 KB/sec, 6071 bytes/write.
 (gdb)
 ...
 (gdb) continue
@@ -56,16 +57,16 @@ You may reset the chip using GDB if you want. You'll need to use `target
 extended-remote' command like in this session:
 
 ```
-(gdb) target extended-remote localhost:4242
-Remote debugging using localhost:4242
+(gdb) target extended-remote localhost:7777
+Remote debugging using localhost:7777
 0x080007a8 in _startup ()
 (gdb) kill
 Kill the program being debugged? (y or n) y
 (gdb) run
-Starting program: /home/whitequark/ST/apps/bally/firmware.elf
+Starting program: /home/bally/firmware.elf
 ```
 
-Remember that you can shorten the commands. `tar ext :4242' is good enough
+Remember that you can shorten the commands. `tar ext :7777' is good enough
 for GDB.
 
 ## Running programs from SRAM
@@ -93,33 +94,12 @@ then it would be written to the memory.
 
 ## FAQ
 
-### **Q:** My breakpoints do not work at all or only work once.
-
-**A:** Optimizations can cause severe instruction reordering. For example,
-if you are doing something like `var = 0x100;` in a loop, the code may
-be split into two parts: loading 0x100 into some intermediate register
-and moving that value to REG. When you set up a breakpoint, GDB will
-hook to the first instruction, which may be called only once if there are
-enough unused registers.
-
-**Tip:** You can disable optimization for a specific variable by declaring it `volatile`.
-
-### **Q:** At some point I use GDB command `next`, and it hangs.
-
-A: Sometimes when you will try to use GDB `next` command to skip a loop,
-it will use a rather inefficient single-stepping way of doing that.
-Set up a breakpoint manually in that case and do `continue`.
-
-### **Q:** Load command does not work in GDB.
-
-A: Some people report XML/EXPAT is not enabled by default when compiling
-GDB. Memory map parsing thus fail. Use --enable-expat.
+TBD.
 
 ## Known missing features
 
 Some features are missing from the `grumat/TivaGdbAgent` project and we would like you to help us out if you want to get involved:
 
- * Command line option for help and port configuration
  * Test on Windows 7
  * Flash only tool (use [LM Flash Programmer](http://www.ti.com/tool/lmflashprogrammer) for now)
 
