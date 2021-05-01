@@ -133,6 +133,16 @@ void CGdbPacket::MakePayload(const char *str, bool fAppend)
 }
 
 
+void CGdbPacket::MakePayloadEx(const char *str, size_t count, bool fAppend)
+{
+	if (!fAppend)
+		resize(0);
+	std::string tmp(str, 0, count);
+	PayloadBuilder builder(*this);
+	builder << tmp.c_str();
+}
+
+
 void CGdbPacket::MakeRemoteCmd(const char *cmd)
 {
 	std::string s("qRcmd,");

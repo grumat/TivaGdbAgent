@@ -126,7 +126,7 @@ public:
 	//! Append a CRawBuffer applying transformations (i.e. escaping)
 	CGdbPacket & operator <<(const CRawBuffer &o)
 	{
-		MakePayload(o, true);
+		MakePayloadEx(o, o.size(), true);
 		return *this;
 	}
 	//! Append a CGdbPacket to this one without applying transformations (i.e. no escaping)
@@ -138,6 +138,8 @@ public:
 	}
 	//! Build a GDB packet from an ASCII string
 	void MakePayload(const char *str, bool fAppend = false);
+	//! Build a GDB packet from an ASCII string
+	void MakePayloadEx(const char *str, size_t count, bool fAppend = false);
 
 	void MakeRemoteCmd(const char *cmd);
 	std::string UnhexifyPayload() const;
