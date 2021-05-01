@@ -1,5 +1,4 @@
 Windows version of the TI Tiva/Stellaris lm4tools
-Windows version of the TI Tiva/Stellaris lm4tools
 =================================================
 
 ## Target
